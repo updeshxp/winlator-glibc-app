@@ -202,7 +202,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             String dxwrapperConfig = container.getDXWrapperConfig();
             String graphicsDriverConfig = container.getGraphicsDriverConfig();
             audioDriverConfig = new KeyValueSet(container.getAudioDriverConfig());
-            screenInfo = new ScreenInfo(container.getScreenSize());
+            screenInfo = resolveScreenInfo(container.getScreenSize());
 
             if (shortcut != null) {
                 graphicsDriver = shortcut.getExtra("graphicsDriver", container.getGraphicsDriver());
@@ -212,7 +212,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 dxwrapperConfig = shortcut.getExtra("dxwrapperConfig", container.getDXWrapperConfig());
                 graphicsDriverConfig = shortcut.getExtra("graphicsDriverConfig", container.getGraphicsDriverConfig());
                 audioDriverConfig = new KeyValueSet(shortcut.getExtra("audioDriverConfig", container.getAudioDriverConfig()));
-                screenInfo = new ScreenInfo(shortcut.getExtra("screenSize", container.getScreenSize()));
+                screenInfo = resolveScreenInfo(shortcut.getExtra("screenSize", container.getScreenSize()));
 
                 String dinputMapperType = shortcut.getExtra("dinputMapperType");
                 if (!dinputMapperType.isEmpty()) winHandler.gamepadHandler.setDInputMapperType(Byte.parseByte(dinputMapperType));
@@ -298,7 +298,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         super.onWindowFocusChanged(hasFocus);
 
         if (hasFocus) {
-            if (capturePointerOnExternalMouse) touchpadView.requestPointerCapture();
+            if (capturePointerOnExternalMouse) {
+                // Captured events are delivered to the focused view.
+                View captureView = inputControlsView.getVisibility() == View.VISIBLE ? inputControlsView : touchpadView;
+                if (captureView.requestFocus()) captureView.requestPointerCapture();
+            }
 
             if (winHandler != null && clipboardManager != null && clipboardManager.hasPrimaryClip()) {
                 ClipData primaryClip = clipboardManager.getPrimaryClip();
@@ -600,6 +604,10 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         inputControlsView = new InputControlsView(this);
         inputControlsView.setOverlayOpacity(preferences.getFloat("overlay_opacity", InputControlsView.DEFAULT_OVERLAY_OPACITY));
         inputControlsView.setTouchpadView(touchpadView);
+        if (capturePointerOnExternalMouse) {
+            inputControlsView.setOnCapturedPointerListener((view, event) ->
+                touchpadView.isEnabled() && touchpadView.onCapturedPointer(view, event));
+        }
         inputControlsView.setXServer(xServer);
         inputControlsView.setVisibility(View.GONE);
         rootView.addView(inputControlsView);
@@ -743,7 +751,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
 
         if (graphicsDriver[0].equals(GraphicsDrivers.TURNIP)) {
-            envVars.put("MESA_VK_WSI_PRESENT_MODE", "mailbox");
             TurnipConfigDialog.setEnvVars(this, graphicsDriverConfig[0], envVars);
 
             if (changed) {
@@ -1030,6 +1037,14 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
     public void setScreenInfo(ScreenInfo screenInfo) {
         this.screenInfo = screenInfo;
+    }
+
+    private ScreenInfo resolveScreenInfo(String value) {
+        if (!value.equals("native")) return new ScreenInfo(value);
+
+        int width = AppUtils.getScreenWidth();
+        int height = AppUtils.getScreenHeight();
+        return new ScreenInfo(width - (width % 2), height - (height % 2));
     }
 
     public String getWinComponents() {
